@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gymtrack-v1';
+const CACHE_NAME = 'gymtrack-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -24,8 +24,20 @@ self.addEventListener('activate', event => {
   self.clients.claim();
 });
 
+// Network-first: tenta buscar sempre a versão mais recente da rede e atualiza o cache;
+// caso esteja offline, usa a versão salva em cache.
 self.addEventListener('fetch', event => {
+  if (event.request.method !== 'GET') return;
+
   event.respondWith(
-    caches.match(event.request).then(cached => cached || fetch(event.request))
+    fetch(event.request)
+      .then(networkResponse => {
+        if (networkResponse && networkResponse.status === 200) {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(event.request, responseClone));
+        }
+        return networkResponse;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
