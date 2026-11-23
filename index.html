@@ -157,7 +157,7 @@ button { cursor:pointer; border:none; background:none; color:inherit; }
 .ex-metric .m-sub { font-size:10px; color:var(--text-muted); margin-top:1px; }
 
 /* ===== SERIES TABLE ===== */
-.series-table { width:100%; margin-bottom:10px; }
+.series-table { width:100%; margin-bottom:8px; }
 .series-row {
   display:flex; align-items:center; gap:6px;
   padding: 8px 0;
@@ -172,7 +172,7 @@ button { cursor:pointer; border:none; background:none; color:inherit; }
 .series-num.warmup { background:var(--orange-dim); color:var(--orange); }
 .series-num.done-set { background:var(--green-dim); color:var(--green); }
 .series-input {
-  width:60px; padding:8px 6px; border-radius:8px;
+  width:58px; padding:8px 6px; border-radius:8px;
   border:1px solid var(--border); background:var(--bg-input);
   color:var(--text-primary); font-size:15px; font-weight:600;
   text-align:center; outline:none; transition: border-color .2s;
@@ -183,11 +183,16 @@ button { cursor:pointer; border:none; background:none; color:inherit; }
 .series-ref { font-size:10px; color:var(--text-muted); margin-left:auto; white-space:nowrap; }
 
 .warmup-toggle {
-  display:flex; align-items:center; gap:4px;
-  padding:4px 8px; border-radius:6px; font-size:10px;
+  display:flex; align-items:center; gap:3px;
+  padding:5px 7px; border-radius:6px; font-size:10px; font-weight:600;
+  background:var(--bg-secondary); border:1px solid var(--border);
   color:var(--text-muted); transition: all .2s; flex-shrink:0;
 }
-.warmup-toggle.active { background:var(--orange-dim); color:var(--orange); }
+.warmup-toggle.active {
+  background:var(--orange-dim);
+  color:var(--orange);
+  border-color:rgba(255,171,64,.45);
+}
 
 .done-btn {
   width:32px; height:32px; border-radius:50%;
@@ -195,6 +200,22 @@ button { cursor:pointer; border:none; background:none; color:inherit; }
   justify-content:center; font-size:14px; transition:all .2s; flex-shrink:0;
 }
 .done-btn.checked { border-color:var(--green); background:var(--green-dim); color:var(--green); }
+
+.remove-set-btn {
+  width:24px; height:24px; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  color:var(--text-muted); font-size:12px; flex-shrink:0;
+}
+.remove-set-btn:active { background:var(--red-dim); color:var(--red); }
+
+.add-set-btn {
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  width:100%; padding:9px; border-radius:var(--radius-sm);
+  border:1px dashed var(--border); background:var(--bg-secondary);
+  color:var(--accent-light); font-size:12px; font-weight:600;
+  margin-top:4px; transition: all .2s;
+}
+.add-set-btn:active { border-color:var(--accent); background:var(--accent-glow); }
 
 /* ===== TIMER ===== */
 .timer-bar {
@@ -656,7 +677,6 @@ function loadState() {
     const s = localStorage.getItem('gymtrack_state');
     if (s) {
       state = JSON.parse(s);
-      // Merge new catalog exercises
       if (!state.customExercises) state.customExercises = [];
       if (!state.timerDuration) state.timerDuration = 90;
     } else {
@@ -729,6 +749,7 @@ function startWorkout(idx) {
     exercises: w.exercises.map(ex => ({
       name: ex.name,
       muscle: ex.muscle,
+      targetSets: ex.sets,
       sets: Array.from({length: ex.sets}, () => ({kg: '', reps: '', warmup: false, done: false})),
       targetReps: ex.reps,
     })),
@@ -740,7 +761,17 @@ function startWorkout(idx) {
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
 }
 
-function renderExercises() {
+function syncExerciseInputs(ei) {
+  const sets = currentSessionData.exercises[ei].sets;
+  sets.forEach((sd, si) => {
+    const kgInput = document.getElementById(`kg-${ei}-${si}`);
+    const repsInput = document.getElementById(`reps-${ei}-${si}`);
+    if (kgInput) sd.kg = kgInput.value !== '' ? parseFloat(kgInput.value) : '';
+    if (repsInput) sd.reps = repsInput.value !== '' ? parseInt(repsInput.value) : '';
+  });
+}
+
+function renderExercises(openStates = null) {
   const w = state.workouts[currentWorkoutIdx];
   const list = document.getElementById('exerciseList');
   list.innerHTML = '';
@@ -749,6 +780,8 @@ function renderExercises() {
     const history = getExerciseHistory(w.id, ex.name);
     const lastData = history.length > 0 ? history[history.length - 1] : null;
     const validHistory = getValidHistoryStats(history);
+    const sessionEx = currentSessionData.exercises[ei];
+    const isOpen = openStates ? openStates[ei] : true;
 
     let lastInfoHTML = '';
     if (lastData) {
@@ -783,41 +816,54 @@ function renderExercises() {
     }
 
     let setsHTML = '';
-    for (let si = 0; si < ex.sets; si++) {
-      const sd = currentSessionData.exercises[ei].sets[si];
+    let validCounter = 0;
+    sessionEx.sets.forEach((sd, si) => {
+      if (!sd.warmup) validCounter++;
+      const badgeText = sd.warmup ? 'AQ' : validCounter;
       const lastSet = lastData && lastData.sets[si] ? lastData.sets[si] : null;
       const refText = lastSet ? `${lastSet.kg}×${lastSet.reps}` : '';
+      const canRemove = sessionEx.sets.length > 1;
       setsHTML += `
         <div class="series-row">
-          <div class="series-num ${sd.warmup ? 'warmup' : ''} ${sd.done ? 'done-set' : ''}" id="snum-${ei}-${si}">${si + 1}</div>
+          <div class="series-num ${sd.warmup ? 'warmup' : ''} ${sd.done ? 'done-set' : ''}" id="snum-${ei}-${si}">${badgeText}</div>
           <input class="series-input" type="number" inputmode="decimal" step="0.5" placeholder="Kg"
             value="${sd.kg}" onchange="updateSet(${ei},${si},'kg',this.value)" id="kg-${ei}-${si}">
           <span class="series-label">kg</span>
           <input class="series-input" type="number" inputmode="numeric" placeholder="Reps"
             value="${sd.reps}" onchange="updateSet(${ei},${si},'reps',this.value)" id="reps-${ei}-${si}" style="width:50px;">
           <span class="series-label">reps</span>
-          <button class="warmup-toggle ${sd.warmup ? 'active' : ''}" onclick="toggleWarmup(${ei},${si})" id="wu-${ei}-${si}" title="Aquecimento">🔥</button>
+          <button class="warmup-toggle ${sd.warmup ? 'active' : ''}" onclick="toggleWarmup(${ei},${si})" id="wu-${ei}-${si}" title="Marcar como série de aquecimento">🔥 Aq</button>
           <button class="done-btn ${sd.done ? 'checked' : ''}" onclick="toggleDone(${ei},${si})" id="done-${ei}-${si}">✓</button>
           ${refText ? `<span class="series-ref">${refText}</span>` : ''}
+          ${canRemove ? `<button class="remove-set-btn" onclick="removeSet(${ei},${si})" title="Remover série">✕</button>` : ''}
         </div>`;
-    }
+    });
+
+    const validCount = sessionEx.sets.filter(s => !s.warmup).length;
+    const warmupCount = sessionEx.sets.filter(s => s.warmup).length;
+    const setsSummary = warmupCount > 0 ? `${warmupCount} aq + ${validCount}×${ex.reps}` : `${validCount}×${ex.reps}`;
 
     list.innerHTML += `
       <div class="exercise-item">
         <div class="exercise-header" onclick="toggleExercise(this)">
           <div class="ex-left">
             <div class="ex-name">${ex.name}</div>
-            <div class="ex-muscle">${ex.muscle} · ${ex.sets}×${ex.reps} · RIR ${ex.rir} · ⏱ ${ex.rest}</div>
+            <div class="ex-muscle">${ex.muscle} · ${setsSummary} · RIR ${ex.rir} · ⏱ ${ex.rest}</div>
           </div>
-          <span class="ex-chevron">▼</span>
+          <span class="ex-chevron ${isOpen ? 'open' : ''}">▼</span>
         </div>
-        <div class="exercise-body open">
+        <div class="exercise-body ${isOpen ? 'open' : ''}">
           ${lastInfoHTML}
           ${metricsHTML}
           <div class="series-table">${setsHTML}</div>
+          <button class="add-set-btn" onclick="addSet(${ei})">+ Adicionar mais uma série</button>
         </div>
       </div>`;
   });
+}
+
+function getOpenStates() {
+  return Array.from(document.querySelectorAll('.exercise-body')).map(b => b.classList.contains('open'));
 }
 
 function toggleExercise(header) {
@@ -828,26 +874,49 @@ function toggleExercise(header) {
 }
 
 function updateSet(ei, si, field, value) {
-  if (field === 'kg') currentSessionData.exercises[ei].sets[si].kg = parseFloat(value) || '';
-  if (field === 'reps') currentSessionData.exercises[ei].sets[si].reps = parseInt(value) || '';
+  if (field === 'kg') currentSessionData.exercises[ei].sets[si].kg = value !== '' ? parseFloat(value) : '';
+  if (field === 'reps') currentSessionData.exercises[ei].sets[si].reps = value !== '' ? parseInt(value) : '';
+}
+
+function addSet(ei) {
+  syncExerciseInputs(ei);
+  const openStates = getOpenStates();
+  currentSessionData.exercises[ei].sets.push({ kg: '', reps: '', warmup: false, done: false });
+  renderExercises(openStates);
+}
+
+function removeSet(ei, si) {
+  syncExerciseInputs(ei);
+  const openStates = getOpenStates();
+  if (currentSessionData.exercises[ei].sets.length > 1) {
+    currentSessionData.exercises[ei].sets.splice(si, 1);
+    renderExercises(openStates);
+  }
 }
 
 function toggleWarmup(ei, si) {
-  const sd = currentSessionData.exercises[ei].sets[si];
+  syncExerciseInputs(ei);
+  const openStates = getOpenStates();
+  const sessionEx = currentSessionData.exercises[ei];
+  const sd = sessionEx.sets[si];
   sd.warmup = !sd.warmup;
-  const btn = document.getElementById(`wu-${ei}-${si}`);
-  btn.classList.toggle('active', sd.warmup);
-  const num = document.getElementById(`snum-${ei}-${si}`);
-  num.classList.toggle('warmup', sd.warmup);
+
+  // Se marcou como aquecimento e o total de séries válidas ficou menor que a meta do exercício, adiciona automaticamente uma série válida abaixo
+  const validSetsCount = sessionEx.sets.filter(s => !s.warmup).length;
+  const targetSets = sessionEx.targetSets || state.workouts[currentWorkoutIdx].exercises[ei].sets;
+  if (sd.warmup && validSetsCount < targetSets) {
+    sessionEx.sets.push({ kg: '', reps: '', warmup: false, done: false });
+  }
+
+  renderExercises(openStates);
 }
 
 function toggleDone(ei, si) {
   const sd = currentSessionData.exercises[ei].sets[si];
-  // Read current input values first
   const kgInput = document.getElementById(`kg-${ei}-${si}`);
   const repsInput = document.getElementById(`reps-${ei}-${si}`);
-  sd.kg = parseFloat(kgInput.value) || '';
-  sd.reps = parseInt(repsInput.value) || '';
+  sd.kg = kgInput.value !== '' ? parseFloat(kgInput.value) : '';
+  sd.reps = repsInput.value !== '' ? parseInt(repsInput.value) : '';
 
   sd.done = !sd.done;
   const btn = document.getElementById(`done-${ei}-${si}`);
@@ -855,7 +924,6 @@ function toggleDone(ei, si) {
   const num = document.getElementById(`snum-${ei}-${si}`);
   num.classList.toggle('done-set', sd.done);
 
-  // Start rest timer when marking set as done
   if (sd.done) {
     showTimer();
     startTimer();
@@ -863,21 +931,14 @@ function toggleDone(ei, si) {
 }
 
 function finishWorkout() {
-  // Read all current input values
   const w = state.workouts[currentWorkoutIdx];
   w.exercises.forEach((ex, ei) => {
-    for (let si = 0; si < ex.sets; si++) {
-      const kgInput = document.getElementById(`kg-${ei}-${si}`);
-      const repsInput = document.getElementById(`reps-${ei}-${si}`);
-      if (kgInput) currentSessionData.exercises[ei].sets[si].kg = parseFloat(kgInput.value) || '';
-      if (repsInput) currentSessionData.exercises[ei].sets[si].reps = parseInt(repsInput.value) || '';
-    }
+    syncExerciseInputs(ei);
   });
 
   currentSessionData.calories = parseFloat(document.getElementById('sessionCalories').value) || null;
   currentSessionData.date = new Date().toISOString();
 
-  // Only save if at least one set was done
   const anyDone = currentSessionData.exercises.some(e => e.sets.some(s => s.done));
   if (!anyDone) {
     showConfirmDialog('Nenhuma série foi marcada como concluída. Deseja salvar mesmo assim?', () => {
@@ -980,13 +1041,10 @@ function updateTimerDisplay() {
 }
 
 function timerFinished() {
-  // Vibration
   if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
-  // Visual flash
   const display = document.getElementById('timerDisplay');
   display.textContent = '00:00';
   display.classList.add('danger');
-  // Audio beep
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
     function beep(freq, start, dur) {
@@ -1027,18 +1085,17 @@ function getValidHistoryStats(history) {
   let totalKg = 0, totalReps = 0, validSets = 0;
   history.forEach(h => {
     h.sets.forEach(s => {
-      if (!s.warmup && s.kg && s.reps) {
+      if (!s.warmup && s.kg !== '' && s.reps !== '') {
         totalKg += parseFloat(s.kg);
         totalReps += parseInt(s.reps);
         validSets++;
       }
     });
   });
-  // Last session volume
   const lastH = history[history.length - 1];
   let lastVol = 0;
   lastH.sets.forEach(s => {
-    if (!s.warmup && s.kg && s.reps) {
+    if (!s.warmup && s.kg !== '' && s.reps !== '') {
       lastVol += parseFloat(s.kg) * parseInt(s.reps);
     }
   });
@@ -1063,7 +1120,7 @@ function renderHistory() {
     let totalVol = 0;
     h.exercises.forEach(e => {
       e.sets.forEach(s => {
-        if (!s.warmup && s.kg && s.reps) totalVol += parseFloat(s.kg) * parseInt(s.reps);
+        if (!s.warmup && s.kg !== '' && s.reps !== '') totalVol += parseFloat(s.kg) * parseInt(s.reps);
       });
     });
     const calStr = h.calories ? `🔥 ${h.calories} kcal` : '';
@@ -1086,7 +1143,7 @@ function viewHistoryDetail(idx) {
   h.exercises.forEach(e => {
     const setsStr = e.sets.map((s, i) => {
       const badge = s.warmup ? ' 🔥aq' : '';
-      return `S${i+1}: ${s.kg || '-'}kg × ${s.reps || '-'}${badge}`;
+      return `S${i+1}: ${s.kg !== '' ? s.kg : '-'}kg × ${s.reps !== '' ? s.reps : '-'}${badge}`;
     }).join(' · ');
     detail += `<div style="margin-bottom:8px;"><strong>${e.name}</strong><br><span style="font-size:12px;color:var(--text-secondary);">${setsStr}</span></div>`;
   });
@@ -1110,7 +1167,6 @@ function deleteHistory(idx) {
     saveState();
     closeModal('modalExSelect');
     renderHistory();
-    // Rebuild modal content
     rebuildExSelectModal();
   });
 }
@@ -1132,6 +1188,7 @@ function rebuildExSelectModal() {
     </div>
     <button class="modal-btn secondary" style="margin-top:8px;" onclick="closeModal('modalExSelect')">Cancelar</button>
   `;
+  populateNewExMuscleSelect();
 }
 
 // ====================== EDIT SCREEN ======================
@@ -1245,7 +1302,7 @@ function buildExerciseSelectList() {
     return true;
   });
   container.innerHTML = filtered.map(e =>
-    `<div class="ex-select-item" onclick="addExerciseToWorkout('${e.name.replace(/'/g, "\\'")}','${e.muscle}')">
+    `<div class="ex-select-item" onclick="addExerciseToWorkout('${e.name.replace(/'/g, "\'")}','${e.muscle}')">
       <div><div class="esi-name">${e.name}</div><div class="esi-muscle">${e.muscle}</div></div>
     </div>`
   ).join('');
@@ -1350,17 +1407,14 @@ function formatDate(isoStr) {
 loadState();
 renderHome();
 
-// Close modal on overlay click
 document.querySelectorAll('.modal-overlay').forEach(ov => {
   ov.addEventListener('click', (e) => {
     if (e.target === ov) ov.classList.remove('active');
   });
 });
 
-// Populate muscle select for new exercises
 setTimeout(populateNewExMuscleSelect, 100);
 
-// Register Service Worker
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
